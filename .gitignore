@@ -2,6 +2,5 @@ cmake-build-debug
 .idea
 CMakeLists.txt
 main.cpp
-matrix.h
 *.out
 .token
