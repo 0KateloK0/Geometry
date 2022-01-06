@@ -240,6 +240,9 @@ public:
         return !(*this == right);
     }
 
+    template <size_t A, size_t B>
+    friend std::ostream operator << (std::ostream &, Matrix const &);
+
     // для того чтобы можно было использовать приватные поля матриц любого размера
     template <size_t A, size_t B, typename T>
     friend class Matrix;
@@ -370,3 +373,15 @@ Matrix<N, M, Field> operator * (Field const & left, Matrix <N, M, Field> const &
 
 template <size_t N, typename Field = double>
 using SquareMatrix = Matrix <N, N, Field>;
+
+template <size_t A, size_t B>
+std::ostream & operator << (std::ostream & cout, Matrix<A, B> const & m) {
+    for (size_t i = 0; i < A; ++i) {
+        for (size_t j = 0; j < B; ++j) {
+            cout << m[i][j] << ' ';
+        }
+        cout << '\n';
+    }
+    cout << '\n';
+    return cout;
+}

@@ -45,7 +45,10 @@ struct Point {
         x *= l; y *= l;
         return *this;
     }
-
+    Point & operator /= (double l) {
+        x /= l; y /= l;
+        return *this;
+    }
     friend std::ostream & operator << (std::ostream & cout, Point const & p);
 
     static double distance (Point const & p1, Point const & p2);
@@ -71,6 +74,14 @@ Point operator * (double l, Point const & p) {
     Point cpy(p);
     return cpy *= l;
 }
+Point operator / (Point const & p, double l) {
+    Point cpy(p);
+    return cpy /= l;
+}
+Point operator / (double l, Point const & p) {
+    Point cpy(p);
+    return cpy /= l;
+}
 std::ostream & operator << (std::ostream & cout, Point const & p) {
     cout << p.x << ' ' << p.y << '\n';
     return cout;
@@ -94,9 +105,11 @@ double operator ^ (Point const & p1, Point const & p2) {
 class Line {
 public:
     Line () = default;
+    Line (double A, double B, double C) : A(A), B(B), C(C) {}
     Line (Point const & p0, Point const & p1) :
             A(p0.y-p1.y), B(p1.x - p0.x), C(p0.x * p1.y - p0.y * p1.x) {}
     Line (double k, double b) : A(-k), B(1), C(-b) {}
+    Line (Point const & p0, double k) : A(-k), B(1), C(k * p0.x - p0.y) {}
 
     [[nodiscard]] bool belongs (Point const & p) const {
         return A * p.x + B * p.y + C == 0;
@@ -114,7 +127,14 @@ public:
     double C = 0;
 
     friend std::ostream & operator << (std::ostream & cout, Line const & l);
+    static Point intersection (Line const & l1, Line const & l2) {
+        double det = l1.A * l2.B - l1.B * l2.A;
+        if (det == 0) return {1 / 0.0, 1 / 0.0};
+        return { (l1.C * l2.B - l2.C * l1.B) / det, (l1.C * l2.A - l2.C * l1.A) / det };
+    }
 };
+
+
 
 std::ostream & operator << (std::ostream & cout, Line const & l) {
     cout << l.A << ' ' << l.B << ' ' << l.C << '\n';
@@ -128,31 +148,41 @@ public:
     virtual void reflect (const Point &) = 0;
     virtual void reflect (const Line &) = 0;
     virtual void scale (const Point &, double) = 0;
-    virtual bool operator == (Shape const &) const = 0;
-    virtual bool operator != (Shape const &) const = 0;
+    virtual bool operator == (Shape const &) const {
+        return false;
+    }
+    virtual bool operator != (Shape const &) const {
+        return true;
+    }
     [[nodiscard]] virtual double perimeter () const = 0;
     [[nodiscard]] virtual double area () const = 0;
-    [[nodiscard]] virtual bool isCongruentTo (Shape const &) const = 0;
-    [[nodiscard]] virtual bool isSimilarTo (Shape const &) const = 0;
-    [[nodiscard]] virtual bool containsPoint (Shape const &) const = 0;
+    [[nodiscard]] virtual bool isSimilarTo (Shape const &) const {
+        return false;
+    }
+    [[nodiscard]] virtual bool isCongruentTo (Shape const &) const {
+        return false;
+    }
+    [[nodiscard]] virtual bool containsPoint (Point const &) const {
+        return false;
+    }
 };
 
 class Polygon : public Shape {
 public:
     Polygon () = default;
     ~Polygon () override = default;
-
     Polygon (Point ver1, Point ver2, Point ver3, ...) : vertices({ver1, ver2, ver3}) {
         va_list points;
         va_start(points, ver3);
 
     }
-
     explicit Polygon (vector<Point> const & vertices) : vertices(vertices) {}
     [[nodiscard]] size_t verticesCount () const {
         return vertices.size();
     }
-    [[nodiscard]] bool isConvex () const;
+    [[nodiscard]] bool isConvex () const {
+        return true;
+    }
     void rotate (const Point & center, double angle) override {
         applyMatrix(Matrix<3, 3>{ { cos(angle), sin(angle), 0 },
                                       { -sin(angle), cos(angle), 0 },
@@ -160,25 +190,39 @@ public:
                                         -center.x * sin(angle) - center.y * (cos(angle) - 1), 1 } } );
     }
     void reflect (const Point & center) override {
-
+        applyMatrix(Matrix<3, 3>{ { -1, 0, 0 },
+                                      { 0, -1, 0 },
+                                      { 2 * center.x, 2 * center.y, 1 } });
     }
-    void reflect (const Line &) override {
-
+    void reflect (const Line & axis) override {
+        double k = axis.A * axis.A + axis.B * axis.B;
+        applyMatrix(Matrix<3, 3>{
+            { (axis.B * axis.B - axis.A * axis.A) / k, -2 * axis.A * axis.B / k, 0 },
+            { -2 * axis.A * axis.B / k, (axis.A * axis.A - axis.B * axis.B) / k, 0 },
+            { -2 * axis.C * axis.A / k, -2 * axis.C * axis.B / k, 1 } });
     }
-    void scale (const Point &, double) override {
-
+    void scale (const Point & center, double coefficient) override {
+        applyMatrix(Matrix<3, 3>{
+                { coefficient, 0, 0 },
+                { 0, coefficient, 0 },
+                { (-coefficient + 1) * center.x, (-coefficient + 1) * center.y, 1 }
+        });
     }
-    bool operator == (Polygon const & s) const {
-        if (vertices.size() != s.vertices.size()) return false;
+    bool operator == (Polygon const & right) const {
+        if (vertices.size() != right.vertices.size()) return false;
         for (size_t i = 0; i < vertices.size(); ++i) {
             size_t j = i;
-            /*for (; j < i + vertices.size(); ++j) {
-                if (vertices)
-            }*/
+            for (; j < i + vertices.size(); ++j) {
+                if (vertices[j % vertices.size()] != right.vertices[j - i])
+                    break;
+            }
+            if (j == i + vertices.size())
+                return true;
         }
+        return false;
     }
-    bool operator != (Shape const &) const override {
-
+    bool operator != (Polygon const & right) const {
+        return !(*this == right);
     }
     [[nodiscard]] double perimeter () const override {
         Point prev = *--vertices.end();
@@ -196,24 +240,153 @@ public:
         }
         return fabs(res);
     }
-    [[nodiscard]] bool isCongruentTo (Shape const &) const override {
-
+    [[nodiscard]] bool isSimilarTo (Polygon const & right) const {
+        if (vertices.size() != right.vertices.size()) return false;
+        for (size_t i = 0; i < vertices.size(); ++i) {
+            size_t j = i;
+            Point diff = vertices[j % vertices.size()] - right.vertices[j - i];
+            for (++j; j < i + vertices.size(); ++j) {
+                if (vertices[j % vertices.size()] - right.vertices[j - i] != diff)
+                    break;
+            }
+            if (j == i + vertices.size())
+                return true;
+        }
+        return false;
     }
-    [[nodiscard]] bool isSimilarTo (Shape const &) const override {
-
+    [[nodiscard]] bool isCongruentTo (Polygon const & right) const {
+        if (vertices.size() != right.vertices.size()) return false;
+        for (size_t i = 0; i < vertices.size(); ++i) {
+            size_t j = i;
+            Point center = Line::intersection(
+                    Line(vertices[j % vertices.size()], right.vertices[j - i]),
+                    Line(vertices[(j + 1) % vertices.size()], right.vertices[j - i + 1]));
+            if (center == Point{1/0.0, 1/0.0}) break;
+            for (++j; j < i + vertices.size(); ++j) {
+                if (!Line(vertices[j % vertices.size()], right.vertices[j - i]).belongs(center))
+                    break;
+            }
+            if (j == i + vertices.size())
+                return true;
+        }
+        return false;
     }
-    [[nodiscard]] bool containsPoint (Shape const &) const override {
-
+    [[nodiscard]] bool containsPoint (Point const & p) const override {
+        double sign = (vertices[vertices.size() - 1] - vertices[0]) * p;
+        for (size_t i = 0; i < vertices.size(); ++i) {
+            if ((vertices[i] - vertices[i + 1]) * p * sign < 0)
+                return false;
+        }
+        return true;
     }
-private:
+
+    friend std::ostream & operator << (std::ostream & cout, Polygon const & p);
+protected:
     vector <Point> vertices = {};
     void applyMatrix (Matrix <3, 3> const & M) {
         for (auto & vertex : vertices) {
-            vertex = static_cast<Matrix<1, 3>>(vertex) * M;
+            vertex = Matrix<1, 3>{{vertex.x, vertex.y, 1}} * M;
         }
     }
 };
 
-class Rectangle : public Polygon {
+std::ostream & operator << (std::ostream & cout, Polygon const & p) {
+    for (auto x : p.vertices)
+        cout << x << ' ';
+    cout << '\n';
+    return cout;
+}
 
+class Rectangle : public Polygon {
+public:
+    Rectangle (Point ver1, Point ver2, double coefficient) {
+
+    }
+    Point center () const {
+        return vertices[0] - vertices[2];
+    }
+    std::pair <Line, Line> diagonals () const {
+        return {{vertices[0], vertices[2]}, {vertices[1], vertices[3]}};
+    }
+
+};
+
+class Triangle : public Polygon {
+public:
+    Triangle (vector<Point> vertices) : Polygon (vertices) {}
+    /*[[nodiscard]] bool isCongruentTo (Triangle const & right) const {
+        Matrix<6, 6> M{{vertices[0].x, vertices[0].y, 1, 0, 0, 0},
+                     {0, 0, 0, vertices[0].x, vertices[0].y, 1},
+                     {vertices[1].x, vertices[1].y, 1, 0, 0, 0},
+                     {0, 0, 0, vertices[1].x, vertices[1].y, 1},
+                     {vertices[2].x, vertices[2].y, 1, 0, 0, 0},
+                     {0, 0, 0, vertices[2].x, vertices[2].y, 1}};
+        if (M.det() == 0) return false;
+        std::cout << (M.inverted() * Matrix<6, 1>{{right.vertices[0].x},
+                                    {right.vertices[0].y},
+                                    {right.vertices[1].x},
+                                    {right.vertices[1].y},
+                                    {right.vertices[2].x},
+                                    {right.vertices[2].y}});
+        return true;
+    }*/
+};
+
+class Ellipse : public Shape {
+public:
+    ~Ellipse () = default;
+    Ellipse (Point focus1, Point focus2, double axis) : focus1(focus1), focus2(focus2), axis(axis) {}
+    void rotate (const Point &, double);
+    void reflect (const Point &);
+    void reflect (const Line &);
+    void scale (const Point &, double);
+    bool operator == (Ellipse const &) const {
+    return false;
+    }
+    bool operator != (Ellipse const &) const {
+        return true;
+    }
+    [[nodiscard]] double perimeter () const;
+    [[nodiscard]] double area () const;
+    [[nodiscard]] bool isSimilarTo (Ellipse const &) const {
+        return false;
+    }
+    [[nodiscard]] bool isCongruentTo (Ellipse const &) const {
+        return false;
+    }
+    [[nodiscard]] bool containsPoint (Point const &) const {
+        return false;
+    }
+
+    std::pair<Point, Point> focuses () const {
+        return {focus1, focus2 };
+    }
+    std::pair<Line, Line> directrices () const {
+        double c = Point::distance(focus1, focus2) / 2;
+        Line a(focus1, focus2);
+        Line b((focus2 + focus1) / 2, -a.A / a.B);
+        return {Line{b.A, b.B, b.C + c}, Line{b.A, b.B, b.C - c}};
+    }
+protected:
+    Point focus1, focus2;
+    double axis; // большая полуось
+};
+
+class Circle : public Ellipse {
+public:
+    Circle (Point Center, double radius) : Ellipse(Center, Center, radius) {}
+    double radius () const {
+        return axis;
+    }
+};
+
+class Square : public Rectangle {
+public:
+    Square (Point ver1, Point ver2) : Rectangle(ver1, ver2, 1) {}
+    Circle circumscribedCircle () const {
+        return Circle{center(), Point::distance(vertices[0], vertices[2]) / 2};
+    }
+    Circle inscribedCircle () const {
+        return Circle{center(), Point::distance(vertices[0], vertices[1]) / 2};
+    }
 };
