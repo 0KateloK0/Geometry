@@ -52,6 +52,10 @@ struct Point {
     friend std::ostream & operator << (std::ostream & cout, Point const & p);
 
     static double distance (Point const & p1, Point const & p2);
+
+    double abs () const {
+        return sqrt(x * x + y * y);
+    }
 };
 
 Point operator + (Point const & p1, Point const & p2) {
@@ -309,36 +313,6 @@ public:
 
 };
 
-class Triangle : public Polygon {
-public:
-    Triangle (vector<Point> vertices) : Polygon (vertices) {}
-    [[nodiscard]] bool isCongruentTo (Triangle const & right) const {
-        const Matrix<6, 1> raw_tr = Matrix<6, 6>{{vertices[0].x, vertices[0].y, 1, 0, 0, 0},
-                     {0, 0, 0, vertices[0].x, vertices[0].y, 1},
-                     {vertices[1].x, vertices[1].y, 1, 0, 0, 0},
-                     {0, 0, 0, vertices[1].x, vertices[1].y, 1},
-                     {vertices[2].x, vertices[2].y, 1, 0, 0, 0},
-                     {0, 0, 0, vertices[2].x, vertices[2].y, 1}}.inverted()
-                     * Matrix<6, 1>{{right.vertices[0].x},
-                                    {right.vertices[0].y},
-                                    {right.vertices[1].x},
-                                    {right.vertices[1].y},
-                                    {right.vertices[2].x},
-                                    {right.vertices[2].y}};
-        const Matrix<2, 3> tr = {{raw_tr[0][0], raw_tr[1][0], raw_tr[2][0]},
-                           {raw_tr[3][0], raw_tr[4][0], raw_tr[5][0]}};
-        const Point center = (vertices[0] + vertices[1] + vertices[2]) / 3;
-        const Point right_center = (right.vertices[0] + right.vertices[1] + right.vertices[2]) / 3;
-        std::cout << tr << center << right_center;
-        std::cout << ((tr * Matrix<3, 1>{{center.x}, {center.y}, {1}})[1][0]);
-
-        const Matrix<2, 1> res = tr * Matrix<3, 1>{{center.x}, {center.y}, {1}}
-                        - Matrix<2, 1>{{right_center.x}, {right_center.y}};
-        const double eps = 1e-6;
-        return res[0][0] < eps && res[1][0] < eps;
-    }
-};
-
 class Ellipse : public Shape {
 public:
     ~Ellipse () = default;
@@ -419,8 +393,85 @@ protected:
 class Circle : public Ellipse {
 public:
     Circle (Point Center, double radius) : Ellipse(Center, Center, radius) {}
+    Circle (Point Center, Point b) : Ellipse(Center, Center, Point::distance(Center, b)) {}
     double radius () const {
         return axis;
+    }
+};
+
+class Triangle : public Polygon {
+public:
+    Triangle (vector<Point> vertices) : Polygon (vertices) {}
+    [[nodiscard]] bool isCongruentTo (Triangle const & right) const {
+        const Matrix<6, 1> raw_tr = Matrix<6, 6>{{vertices[0].x, vertices[0].y, 1, 0, 0, 0},
+                                                 {0, 0, 0, vertices[0].x, vertices[0].y, 1},
+                                                 {vertices[1].x, vertices[1].y, 1, 0, 0, 0},
+                                                 {0, 0, 0, vertices[1].x, vertices[1].y, 1},
+                                                 {vertices[2].x, vertices[2].y, 1, 0, 0, 0},
+                                                 {0, 0, 0, vertices[2].x, vertices[2].y, 1}}.inverted()
+                                    * Matrix<6, 1>{{right.vertices[0].x},
+                                                   {right.vertices[0].y},
+                                                   {right.vertices[1].x},
+                                                   {right.vertices[1].y},
+                                                   {right.vertices[2].x},
+                                                   {right.vertices[2].y}};
+        const Matrix<2, 3> tr = {{raw_tr[0][0], raw_tr[1][0], raw_tr[2][0]},
+                                 {raw_tr[3][0], raw_tr[4][0], raw_tr[5][0]}};
+        const Point center = centroid();
+        const Point right_center = right.centroid();
+        std::cout << tr << center << right_center;
+        std::cout << ((tr * Matrix<3, 1>{{center.x}, {center.y}, {1}})[1][0]);
+
+        const Matrix<2, 1> res = tr * Matrix<3, 1>{{center.x}, {center.y}, {1}}
+                                 - Matrix<2, 1>{{right_center.x}, {right_center.y}};
+        const double eps = 1e-6;
+        return res[0][0] < eps && res[1][0] < eps;
+    }
+    Circle circumscribedCircle () const {
+        const Line AB(vertices[0], vertices[1]);
+        const Line AC(vertices[0], vertices[2]);
+        const Line BH((vertices[0] + vertices[1]) / 2, -AB.A / AB.B);
+        const Line CH((vertices[0] + vertices[2]) / 2, -AC.A / AC.B);
+        const Point center = Line::intersection(BH, CH);
+        return Circle(center, vertices[0]);
+    }
+    Circle inscribedCircle () const {
+        Point AB = vertices[1] - vertices[0];
+        Point AC = vertices[2] - vertices[0];
+        AB /= AB.abs();
+        AC /= AC.abs();
+        Point BC = vertices[2] - vertices[1];
+        BC /= BC.abs();
+        const Point center = Line::intersection(Line(AB + AC, vertices[0]),
+                                                Line(BC - AB, vertices[1]));
+        return Circle(center, fabs((center - vertices[0]) * AB / AB.abs()));
+    }
+    Line EulerLine () const {
+        const Line AB(vertices[0], vertices[1]);
+        const Line AC(vertices[0], vertices[2]);
+        const Line BH((vertices[0] + vertices[1]) / 2, -AB.A / AB.B);
+        const Line CH((vertices[0] + vertices[2]) / 2, -AC.A / AC.B);
+        const Point center = Line::intersection(BH, CH);
+        return Line(orthocenter(), center);
+    }
+    Circle ninePointsCircle () const {
+        const Line AB(vertices[0], vertices[1]);
+        const Line AC(vertices[0], vertices[2]);
+        const Line BH((vertices[0] + vertices[1]) / 2, -AB.A / AB.B);
+        const Line CH((vertices[0] + vertices[2]) / 2, -AC.A / AC.B);
+        const Point center = Line::intersection(BH, CH);
+
+        return Circle((orthocenter() + centroid()) / 2, Point::distance(center, vertices[0]) / 2);
+    }
+    Point centroid () const {
+        return (vertices[0] + vertices[1] + vertices[2]) / 3;
+    }
+    Point orthocenter () const {
+        const Line AB(vertices[0], vertices[1]);
+        const Line AC(vertices[0], vertices[2]);
+        const Line BH(vertices[1], -AB.A / AB.B);
+        const Line CH(vertices[2], -AC.A / AC.B);
+        return Line::intersection(BH, CH);
     }
 };
 
