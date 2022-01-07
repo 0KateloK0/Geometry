@@ -134,8 +134,6 @@ public:
     }
 };
 
-
-
 std::ostream & operator << (std::ostream & cout, Line const & l) {
     cout << l.A << ' ' << l.B << ' ' << l.C << '\n';
     return cout;
@@ -146,7 +144,7 @@ public:
     virtual ~Shape () = default;
     virtual void rotate (const Point &, double) = 0;
     virtual void reflect (const Point &) = 0;
-    virtual void reflect (const Line &) = 0;
+    virtual void reflect(const Line &) = 0;
     virtual void scale (const Point &, double) = 0;
     virtual bool operator == (Shape const &) const {
         return false;
@@ -194,7 +192,7 @@ public:
                                       { 0, -1, 0 },
                                       { 2 * center.x, 2 * center.y, 1 } });
     }
-    void reflect (const Line & axis) override {
+    void reflect(const Line & axis) override {
         double k = axis.A * axis.A + axis.B * axis.B;
         applyMatrix(Matrix<3, 3>{
             { (axis.B * axis.B - axis.A * axis.A) / k, -2 * axis.A * axis.B / k, 0 },
@@ -314,48 +312,84 @@ public:
 class Triangle : public Polygon {
 public:
     Triangle (vector<Point> vertices) : Polygon (vertices) {}
-    /*[[nodiscard]] bool isCongruentTo (Triangle const & right) const {
-        Matrix<6, 6> M{{vertices[0].x, vertices[0].y, 1, 0, 0, 0},
+    [[nodiscard]] bool isCongruentTo (Triangle const & right) const {
+        const Matrix<6, 1> raw_tr = Matrix<6, 6>{{vertices[0].x, vertices[0].y, 1, 0, 0, 0},
                      {0, 0, 0, vertices[0].x, vertices[0].y, 1},
                      {vertices[1].x, vertices[1].y, 1, 0, 0, 0},
                      {0, 0, 0, vertices[1].x, vertices[1].y, 1},
                      {vertices[2].x, vertices[2].y, 1, 0, 0, 0},
-                     {0, 0, 0, vertices[2].x, vertices[2].y, 1}};
-        if (M.det() == 0) return false;
-        std::cout << (M.inverted() * Matrix<6, 1>{{right.vertices[0].x},
+                     {0, 0, 0, vertices[2].x, vertices[2].y, 1}}.inverted()
+                     * Matrix<6, 1>{{right.vertices[0].x},
                                     {right.vertices[0].y},
                                     {right.vertices[1].x},
                                     {right.vertices[1].y},
                                     {right.vertices[2].x},
-                                    {right.vertices[2].y}});
-        return true;
-    }*/
+                                    {right.vertices[2].y}};
+        const Matrix<2, 3> tr = {{raw_tr[0][0], raw_tr[1][0], raw_tr[2][0]},
+                           {raw_tr[3][0], raw_tr[4][0], raw_tr[5][0]}};
+        const Point center = (vertices[0] + vertices[1] + vertices[2]) / 3;
+        const Point right_center = (right.vertices[0] + right.vertices[1] + right.vertices[2]) / 3;
+        std::cout << tr << center << right_center;
+        std::cout << ((tr * Matrix<3, 1>{{center.x}, {center.y}, {1}})[1][0]);
+
+        const Matrix<2, 1> res = tr * Matrix<3, 1>{{center.x}, {center.y}, {1}}
+                        - Matrix<2, 1>{{right_center.x}, {right_center.y}};
+        const double eps = 1e-6;
+        return res[0][0] < eps && res[1][0] < eps;
+    }
 };
 
 class Ellipse : public Shape {
 public:
     ~Ellipse () = default;
     Ellipse (Point focus1, Point focus2, double axis) : focus1(focus1), focus2(focus2), axis(axis) {}
-    void rotate (const Point &, double);
-    void reflect (const Point &);
-    void reflect (const Line &);
-    void scale (const Point &, double);
-    bool operator == (Ellipse const &) const {
-    return false;
+    void rotate (const Point &, double) {
+        return;
     }
-    bool operator != (Ellipse const &) const {
-        return true;
+    void reflect (const Point & center) {
+        applyMatrix(Matrix<3, 3>{ { -1, 0, 0 },
+                      { 0, -1, 0 },
+                      { 2 * center.x, 2 * center.y, 1 } });
     }
-    [[nodiscard]] double perimeter () const;
-    [[nodiscard]] double area () const;
-    [[nodiscard]] bool isSimilarTo (Ellipse const &) const {
-        return false;
+    void reflect (const Line & a) {
+        double k = a.A * a.A + a.B * a.B;
+        applyMatrix(Matrix<3, 3>{
+                {(a.B * a.B - a.A * a.A) / k, -2 * a.A * a.B / k,          0 },
+                {-2 * a.A * a.B / k,          (a.A * a.A - a.B * a.B) / k, 0 },
+                {-2 * a.C * a.A / k,          -2 * a.C * a.B / k,          1 } });
+    }
+    void scale (const Point & center, double coefficient) {
+        applyMatrix(Matrix<3, 3>{
+                { coefficient, 0, 0 },
+                { 0, coefficient, 0 },
+                { (-coefficient + 1) * center.x, (-coefficient + 1) * center.y, 1 }
+        });
+        axis *= coefficient;
+    }
+    bool operator == (Ellipse const & right) const {
+        return focus1 == right.focus1 && focus2 == right.focus2 && axis == right.axis;
+    }
+    bool operator != (Ellipse const & right) const {
+        return !(*this == right);
+    }
+    [[nodiscard]] double perimeter () const {
+        double b = saxis();
+        return M_PI * (3 * (axis + b) - sqrt((3 * axis + b) * (axis + 3 * b)));
+    }
+    [[nodiscard]] double area () const {
+        return M_PI * axis * saxis();
+    }
+    [[nodiscard]] bool isSimilarTo (Ellipse const & right) const {
+        return axis == right.axis && saxis() == right.saxis();
     }
     [[nodiscard]] bool isCongruentTo (Ellipse const &) const {
         return false;
     }
-    [[nodiscard]] bool containsPoint (Point const &) const {
-        return false;
+    [[nodiscard]] bool containsPoint (Point const & p) const {
+        Point center = (focus1 + focus2) / 2;
+        double b = saxis();
+        return (p.x - center.x) * (p.x - center.x) / axis / axis +
+                (p.y - center.y) * (p.y - center.y) / b / b <= 1;
     }
 
     std::pair<Point, Point> focuses () const {
@@ -368,6 +402,16 @@ public:
         return {Line{b.A, b.B, b.C + c}, Line{b.A, b.B, b.C - c}};
     }
 protected:
+    [[nodiscard]] double saxis () const {
+        double c = Point::distance(focus1, focus2) / 2;
+        return sqrt(axis * axis - c * c);
+    }
+    void applyMatrix (Matrix<3, 3> const & M) {
+        auto f1 = Matrix<1, 3>{{focus1.x, focus1.y, 1}} * M;
+        focus1.x = f1[0][0]; focus1.y = f1[0][1];
+        auto f2 = Matrix<1, 3>{{focus2.x, focus2.y, 1}} * M;
+        focus2.x = f2[0][0]; focus2.y = f2[0][1];
+    }
     Point focus1, focus2;
     double axis; // большая полуось
 };
